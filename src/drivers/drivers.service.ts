@@ -17,6 +17,8 @@ import { Wallet, WalletDocument } from './schemas/driver-wallet.schema';
 import { Withdraw, WithdrawDocument } from './schemas/withdraw.schema';
 import { Pricing, PricingDocument } from 'src/customers/booking/schemas/pricing.schema';
 import { DigiLockerService } from './digilocker.service';
+import { PaymentStatus } from 'src/customers/booking/dto/payment-status.dto';
+
 
 @Injectable()
 export class DriversService {
@@ -311,7 +313,7 @@ export class DriversService {
 
     booking.pickupToDropEtaMin = durationMin;
     booking.remainingDistanceKm = distanceKm;
-  
+
     await booking.save();
 
     return { message: 'Trip started' };
@@ -365,6 +367,18 @@ export class DriversService {
       booking.actualDurationMin = Math.ceil(
         (Date.now() - booking.tripStartTime.getTime()) / 60000
       );
+    }
+
+    if (booking.paymentMethod === 'ONLINE') {
+      // Online payment already done earlier
+      booking.paymentStatus = PaymentStatus.SUCCESS;
+
+      // razorpayPaymentId, orderId, signature
+      // are assumed to be saved at payment success time
+    } else {
+      // CASH payment
+      booking.paymentMethod = 'CASH';
+      booking.paymentStatus = PaymentStatus.SUCCESS;
     }
 
     await booking.save();
@@ -463,14 +477,14 @@ export class DriversService {
 
       await booking.save();
 
-    this.liveGateway.emitDriverLocation(
-      booking._id.toString(),
-      {
-        lat: dto.lat,
-        lng: dto.lng,
-      },
-    );
-  }
+      this.liveGateway.emitDriverLocation(
+        booking._id.toString(),
+        {
+          lat: dto.lat,
+          lng: dto.lng,
+        },
+      );
+    }
     return { message: 'Location updated' };
   }
 
