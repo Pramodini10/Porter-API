@@ -54,20 +54,36 @@ export class CustomersService {
     return this.customerModel.findOne({ email }).lean();
   }
 
-  async registerCustomer(dto: any) {
-    const exists = await this.findByMobile(dto.mobile);
-    if (exists) throw new BadRequestException("Mobile already registered");
+  async registerCustomer(dto: CreateCustomerDto) {
+    // 1️⃣ Check mobile
+    const mobileExists = await this.findByMobile(dto.mobile);
+    if (mobileExists) {
+      throw new BadRequestException('Mobile already registered');
+    }
 
-    // Only create OTP session — no customer record yet
-    return this.authService.createSession(dto.mobile, "customer", dto);
+    // 2️⃣ Check email
+    const emailExists = await this.findByEmail(dto.email);
+    if (emailExists) {
+      throw new ConflictException('Email already registered');
+    }
+
+    // 3️⃣ Store TEMP data (NO DB INSERT)
+    await this.authService.createTempData(dto.mobile, 'customer', dto);
+
+    // 4️⃣ Generate + send OTP immediately
+    const { otp } = await this.authService.createSession(
+      dto.mobile,
+      'customer',
+      dto,
+    );
+
+    return {
+      message: 'OTP sent successfully',
+      mobile: dto.mobile,
+      otp, // ⚠️ remove in production
+    };
   }
 
-  // NEW: Step 2 → After OTP verification, finalize saving
-  async completeCustomerRegistration(data: any) {
-    data.password = await this.hashPassword(data.password);   // 🔥 HASH HERE
-    const created = new this.customerModel(data);
-    return created.save();
-  }
 
   //customers/Dashboard
   async getDashboard(customerId: string): Promise<CustomerDashboardResponseDto> {

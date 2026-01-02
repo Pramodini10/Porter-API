@@ -9,17 +9,13 @@ import { UpdateProfileDto } from './dto/profile-update.dto';
 @ApiTags('Customers')
 @Controller('customer')
 export class CustomersController {
-  constructor(private readonly authService: AuthService, 
-  private readonly customersService: CustomersService) {}
+  constructor(private readonly authService: AuthService,
+    private readonly customersService: CustomersService) { }
 
   // 1️⃣ Register Customer (temporarily store data for OTP)
   @Post('register')
   async register(@Body() dto: CreateCustomerDto) {
-    await this.authService.createTempData(dto.mobile, 'customer', dto);
-    return {
-      message: 'Customer registered temporarily. Now call /auth/send-otp',
-      mobile: dto.mobile
-    };
+    return this.customersService.registerCustomer(dto);
   }
 
   @ApiBearerAuth()
