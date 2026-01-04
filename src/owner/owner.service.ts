@@ -23,7 +23,7 @@ export class OwnerService {
     const salt = await bcrypt.genSalt(10);
     return bcrypt.hash(password, salt);
   }
- 
+
   // 1. Owner Registration
   async create(createOwnerDto: CreateOwnerDto): Promise<Partial<Owner>> {
     const { email, password, ...rest } = createOwnerDto;
@@ -87,35 +87,13 @@ export class OwnerService {
     };
   }
 
-  // 3. DRIVER DETAILS + TRIP HISTORY 
+  // 3. DRIVER DETAILS
   async getDriverDetails(driverId: string) {
     const driver = await this.driverModel.findById(driverId).lean();
-    if (!driver) throw new NotFoundException('Driver not found');
 
-    // All completed trips for this driver
-    const completedTrips = await this.bookingModel
-      .find({
-        driverId,
-        status: 'TRIP_COMPLETED',
-      })
-      .sort({ tripEndTime: -1 })
-      .lean();
-
-    const tripHistory = completedTrips.map(trip => ({
-      bookingId: trip._id,
-      pickup: trip.pickupLocation,
-      drop: trip.dropLocation,
-      city: trip.city,
-      vehicleType: trip.vehicleType,
-      distanceKm: trip.distanceKm,
-      durationMin: trip.actualDurationMin,
-      fare: trip.finalFare,
-      driverEarning: trip.driverEarning,
-      tripStartTime: trip.tripStartTime,
-      tripEndTime: trip.tripEndTime,
-      paymentMethod: trip.paymentMethod,
-      paymentStatus: trip.paymentStatus,
-    }));
+    if (!driver) {
+      throw new NotFoundException('Driver not found');
+    }
 
     return {
       driver: {
@@ -125,36 +103,83 @@ export class OwnerService {
         isOnline: driver.isOnline,
         isAvailable: driver.isAvailable,
         vehicleType: driver.vehicleType,
+        vehicleModel: driver.vehicleModel,
+        vehicleNumber: driver.vehicleNumber,
+        vehicleMake: driver.vehicleMake,
+        status: driver.status
       },
-
-      summary: {
-        totalTrips: completedTrips.length,
-      },
-
-      trips: tripHistory,
     };
   }
 
-  // 4. Trips
-  async getAllTrips() {
+  // 4. Customer Booking deatils
+  async getAllBookings() {
     const bookings = await this.bookingModel
-      .find({ driverId: { $ne: null } })
-      .populate('driverId', 'firstName lastName mobile')
-      .populate('customerId', 'firstName lastName mobile')
-      .sort({ createdAt: -1 });
+      .find()
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // collect all driverIds (only valid ones)
+    const driverIds = bookings
+      .map(b => b.driverId)
+      .filter(id => typeof id === 'string');
+
+    // fetch drivers in ONE query (important!)
+    const drivers = await this.driverModel
+      .find({ _id: { $in: driverIds } })
+      .select('firstName lastName mobile')
+      .lean();
+
+    // map for fast lookup
+    const driverMap = new Map(
+      drivers.map(d => [d._id.toString(), d])
+    );
+
+    return bookings.map(b => {
+      const driver = b.driverId
+        ? driverMap.get(b.driverId.toString())
+        : null;
+
+      return {
+        bookingId: b._id,
+
+        driverName: driver
+          ? `${driver.firstName || ''} ${driver.lastName || ''}`.trim()
+          : 'Not Assigned',
+
+        driverMobile: driver?.mobile || '—',
+
+        pickupPoint: b.pickupLocation,
+        dropPoint: b.dropLocation,
+
+        customerId: b.customerId,
+
+        amount: b.finalFare || 0,
+        status: b.status,
+      };
+    });
+  }
+
+  // 5. Driver Booking deatils
+  async getBookingsByDriver(driverId: string) {
+    const bookings = await this.bookingModel
+      .find({ driverId })
+      .sort({ createdAt: -1 })
+      .lean();
 
     return bookings.map(b => ({
       bookingId: b._id,
-      driver: b.driverId,
-      customer: b.customerId,
       pickup: b.pickupLocation,
       drop: b.dropLocation,
-      fare: b.finalFare,
+      customerId: b.customerId,
+      amount: b.finalFare,
       status: b.status,
+      paymentStatus: b.paymentStatus,
+      tripStartTime: b.tripStartTime,
+      tripEndTime: b.tripEndTime,
     }));
   }
 
-   // 6. APPROVE WITHDRAWAL
+  // 6. APPROVE WITHDRAWAL
   async approveWithdrawal(driverId: string) {
     const withdraw = await this.withdrawModel.findOne({
       driverId,

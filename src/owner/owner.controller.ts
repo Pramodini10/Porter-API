@@ -45,14 +45,21 @@ export class OwnerController {
     return this.ownerService.getDriverDetails(driverId);
   }
 
-  // All trips
+  // Customer Booking
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
-  @Get('trips')
-  getTrips() {
-    return this.ownerService.getAllTrips();
+  @Get('bookings')
+  getAllBookings() {
+    return this.ownerService.getAllBookings();
   }
 
+  // Booking/Trip for Driver
+  @ApiBearerAuth()
+  @UseGuards(OwnerJwtGuard)
+  @Get('bookings/driver/:driverId')
+  getBookingsByDriver(@Param('driverId') driverId: string) {
+    return this.ownerService.getBookingsByDriver(driverId);
+  }
   // Approve withdrawal
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
