@@ -9,7 +9,6 @@ import { AuthModule } from 'src/auth/auth.module';
 import { Booking, BookingSchema } from 'src/customers/booking/schemas/booking.schema';
 import { LiveTrackingGateway } from 'src/gateways/live-tracking.gateway';
 import { GatewaysModule } from 'src/gateways/gateways.module';
-import { Wallet, WalletSchema } from './schemas/driver-wallet.schema';
 import { Withdraw, WithdrawSchema } from './schemas/withdraw.schema';
 import { Pricing, PricingSchema } from 'src/customers/booking/schemas/pricing.schema';
 import { DigiLockerService } from './digilocker.service';
@@ -17,8 +16,8 @@ import { DigiLockerService } from './digilocker.service';
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Driver.name, schema: DriverSchema },
-    { name: Booking.name, schema: BookingSchema }, { name: Wallet.name, schema: WalletSchema },
-    { name: Withdraw.name, schema: WithdrawSchema },{ name: Pricing.name, schema: PricingSchema },]),
+    { name: Booking.name, schema: BookingSchema }, { name: Withdraw.name, schema: WithdrawSchema },
+    { name: Pricing.name, schema: PricingSchema },]),
     JwtModule.register({
       secret: 'driver-registration-secret',
       signOptions: { expiresIn: '1d' },

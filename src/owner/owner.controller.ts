@@ -53,26 +53,38 @@ export class OwnerController {
     return this.ownerService.getAllBookings();
   }
 
-  // Booking/Trip for Driver
+  // Trip Management (Driver-wise)
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
-  @Get('bookings/driver/:driverId')
-  getBookingsByDriver(@Param('driverId') driverId: string) {
-    return this.ownerService.getBookingsByDriver(driverId);
+  @Get('trips/management')
+  getTripManagement() {
+    return this.ownerService.getTripManagement();
   }
+
   // Approve withdrawal
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
-  @Post('withdrawals/:driverId/approve')
-  approveWithdrawal(@Param('driverId') driverId: string) {
-    return this.ownerService.approveWithdrawal(driverId);
+  @Post('withdrawals/:withdrawalId/approve')
+  approveWithdrawal(@Param('withdrawalId') withdrawalId: string) {
+    return this.ownerService.approveWithdrawal(withdrawalId);
   }
 
   // Reject withdrawal
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
-  @Post('withdrawals/:driverId/reject')
-  rejectWithdrawal(@Param('driverId') driverId: string) {
-    return this.ownerService.rejectWithdrawal(driverId);
+  @Post('withdrawals/:withdrawalId/reject')
+  rejectWithdrawal(@Param('withdrawalId') withdrawalId: string) {
+    return this.ownerService.rejectWithdrawal(withdrawalId);
+  }
+
+  // Admin Dashboard
+  @ApiBearerAuth()
+  @UseGuards(OwnerJwtGuard)
+  @Get('dashboard/stats')
+  async getDashboardStats() {
+    return {
+      status: true,
+      data: await this.ownerService.getDashboardStats(),
+    };
   }
 }

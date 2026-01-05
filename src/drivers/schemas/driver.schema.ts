@@ -102,15 +102,25 @@ export class Driver {
         coordinates: number[];
     };
 
-
+    @Prop({ type: Number, default: 0 })
     walletBalance: number;
 
-    withdrawal: {
-        amount: number;
-        status: WithdrawalStatus;
-        requestedAt?: Date;
-        processedAt?: Date;
-    };  
+    @Prop({
+        type: {
+            bankName: String,
+            accountHolderName: String,
+            bankAccountNumber: String,
+            ifscCode: String,
+        },
+        default: null,
+    })
+    bankDetails: {
+        bankName: string;
+        accountHolderName: string;
+        bankAccountNumber: string;
+        ifscCode: string;
+    };
+
 }
 
 export const DriverSchema = SchemaFactory.createForClass(Driver);

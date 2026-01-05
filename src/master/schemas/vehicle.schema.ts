@@ -13,5 +13,3 @@ export class Vehicle {
 }
 
 export const VehicleSchema = SchemaFactory.createForClass(Vehicle);
-
-VehicleSchema.index({ name: 1, city: 1 }, { unique: true });

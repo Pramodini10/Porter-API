@@ -5,19 +5,19 @@ import * as bcrypt from 'bcryptjs';
 import { CreateOwnerDto } from './dto/create-owner.dto';
 import { Owner, OwnerDocument } from './schemas/owner.schema';
 import { Booking, BookingDocument } from 'src/customers/booking/schemas/booking.schema';
-import { Wallet, WalletDocument } from 'src/drivers/schemas/driver-wallet.schema';
 import { Driver, DriverDocument } from 'src/drivers/schemas/driver.schema';
 import { Withdraw, WithdrawDocument } from 'src/drivers/schemas/withdraw.schema';
 import { WithdrawalStatus } from 'src/drivers/schemas/driver.schema';
+import { GoogleMapsService } from 'src/common/google-maps.service';
 
 @Injectable()
 export class OwnerService {
   constructor(
     @InjectModel(Owner.name) private ownerModel: Model<OwnerDocument>,
     @InjectModel(Driver.name) private driverModel: Model<DriverDocument>,
-    @InjectModel(Wallet.name) private walletModel: Model<WalletDocument>,
     @InjectModel(Withdraw.name) private withdrawModel: Model<WithdrawDocument>,
-    @InjectModel(Booking.name) private bookingModel: Model<BookingDocument>,) { }
+    @InjectModel(Booking.name) private bookingModel: Model<BookingDocument>,
+    private readonly mapsService: GoogleMapsService,) { }
 
   private async hashPassword(password: string): Promise<string> {
     const salt = await bcrypt.genSalt(10);
@@ -134,78 +134,205 @@ export class OwnerService {
       drivers.map(d => [d._id.toString(), d])
     );
 
-    return bookings.map(b => {
-      const driver = b.driverId
-        ? driverMap.get(b.driverId.toString())
-        : null;
+    return Promise.all(
+      bookings.map(async b => {
+        const driver = b.driverId
+          ? driverMap.get(b.driverId.toString())
+          : null;
 
-      return {
-        bookingId: b._id,
+        return {
+          bookingId: b._id,
 
-        driverName: driver
-          ? `${driver.firstName || ''} ${driver.lastName || ''}`.trim()
-          : 'Not Assigned',
+          driverName: driver
+            ? `${driver.firstName || ''} ${driver.lastName || ''}`.trim()
+            : 'Not Assigned',
 
-        driverMobile: driver?.mobile || '—',
+          driverMobile: driver?.mobile || '—',
 
-        pickupPoint: b.pickupLocation,
-        dropPoint: b.dropLocation,
+          pickupPoint: b.pickupLocation
+            ? {
+              lat: b.pickupLocation.lat,
+              lng: b.pickupLocation.lng,
+              address: await this.mapsService.getCityFromLatLng(
+                b.pickupLocation.lat,
+                b.pickupLocation.lng,
+              ),
+            }
+            : null,
 
-        customerId: b.customerId,
+          dropPoint: b.dropLocation
+            ? {
+              lat: b.dropLocation.lat,
+              lng: b.dropLocation.lng,
+              address: await this.mapsService.getCityFromLatLng(
+                b.dropLocation.lat,
+                b.dropLocation.lng,
+              ),
+            }
+            : null,
 
-        amount: b.finalFare || 0,
-        status: b.status,
-      };
-    });
+          customerId: b.customerId,
+          amount: b.finalFare || 0,
+          status: b.status,
+        };
+      })
+    );
   }
 
-  // 5. Driver Booking deatils
-  async getBookingsByDriver(driverId: string) {
-    const bookings = await this.bookingModel
-      .find({ driverId })
-      .sort({ createdAt: -1 })
+  // 5. TRIP MANAGEMENT (Driver-wise summary)
+  async getTripManagement() {
+    // 1. Get all drivers
+    const drivers = await this.driverModel
+      .find()
+      .select('firstName lastName mobile vehicleType')
       .lean();
 
-    return bookings.map(b => ({
-      bookingId: b._id,
-      pickup: b.pickupLocation,
-      drop: b.dropLocation,
-      customerId: b.customerId,
-      amount: b.finalFare,
-      status: b.status,
-      paymentStatus: b.paymentStatus,
-      tripStartTime: b.tripStartTime,
-      tripEndTime: b.tripEndTime,
-    }));
+    // 2. Get all bookings
+    const bookings = await this.bookingModel
+      .find()
+      .select('driverId status')
+      .lean();
+
+    // 3. Group bookings by driverId
+    const bookingMap = new Map<string, any[]>();
+
+    for (const booking of bookings) {
+      if (!booking.driverId) continue;
+
+      const driverId = booking.driverId.toString();
+      if (!bookingMap.has(driverId)) {
+        bookingMap.set(driverId, []);
+      }
+      bookingMap.get(driverId)?.push(booking);
+    }
+
+    // 4. Prepare response
+    const result = drivers.map(driver => {
+      const driverId = driver._id.toString();
+      const driverBookings = bookingMap.get(driverId) || [];
+
+      const totalTrips = driverBookings.length;
+
+      const completedTrips = driverBookings.filter(
+        b => b.status === 'TRIP_COMPLETED'
+      ).length;
+
+      const ongoingTrips = driverBookings.filter(
+        b =>
+          b.status === 'TRIP_STARTED' ||
+          b.status === 'DRIVER_ASSIGNED'
+      ).length;
+
+      return {
+        driverId,
+        driverName: `${driver.firstName || ''} ${driver.lastName || ''}`.trim(),
+        driverMobile: driver.mobile,
+        vehicleType: driver.vehicleType || '—',
+        totalTrips,
+        completedTrips,
+        ongoingTrips,
+      };
+    });
+
+    return {
+      status: true,
+      data: result,
+    };
   }
 
   // 6. APPROVE WITHDRAWAL
-  async approveWithdrawal(driverId: string) {
+  async approveWithdrawal(withdrawalId: string) {
     const withdraw = await this.withdrawModel.findOne({
-      driverId,
-      status: WithdrawalStatus.REQUESTED,
+      _id: withdrawalId,
+      status: 'PENDING',
     });
 
-    if (!withdraw) throw new BadRequestException('No withdrawal request');
+    if (!withdraw) {
+      throw new BadRequestException('No pending withdrawal request');
+    }
 
-    withdraw.status = WithdrawalStatus.APPROVED;
+    withdraw.status = 'APPROVED';
     await withdraw.save();
 
     return { message: 'Withdrawal approved successfully' };
   }
 
   //7. REJECT WITHDRAWAL 
-  async rejectWithdrawal(driverId: string) {
+  async rejectWithdrawal(withdrawalId: string) {
     const withdraw = await this.withdrawModel.findOne({
-      driverId,
-      status: WithdrawalStatus.REQUESTED,
+      _id: withdrawalId,
+      status: 'PENDING',
     });
 
     if (!withdraw) throw new BadRequestException('No withdrawal request');
 
-    withdraw.status = WithdrawalStatus.REJECTED;
+    withdraw.status = 'REJECTED';
+
+    await this.driverModel.findByIdAndUpdate(withdraw.driverId, {
+      $inc: { walletBalance: withdraw.amount }
+    });
+
     await withdraw.save();
 
     return { message: 'Withdrawal rejected successfully' };
   }
+
+  //8. Admin Dashboard
+  async getDashboardStats() {
+    // bookings stats
+    const [
+      totalTrips,
+      completedTrips,
+      cancelledTrips,
+      ongoingTrips,
+      revenueAgg,
+    ] = await Promise.all([
+      this.bookingModel.countDocuments(),
+
+      this.bookingModel.countDocuments({
+        status: 'TRIP_COMPLETED',
+      }),
+
+      this.bookingModel.countDocuments({
+        status: 'CANCELLED',
+      }),
+
+      this.bookingModel.countDocuments({
+        status: { $in: ['TRIP_STARTED', 'ONGOING'] },
+      }),
+
+      this.bookingModel.aggregate([
+        {
+          $match: { status: 'TRIP_COMPLETED' },
+        },
+        {
+          $group: {
+            _id: null,
+            totalRevenue: { $sum: '$finalFare' },
+          },
+        },
+      ]),
+    ]);
+
+    // drivers & customers
+    const [totalDrivers, totalCustomers] = await Promise.all([
+      this.driverModel.countDocuments(),
+      this.ownerModel.db.collection('customers').countDocuments(),
+    ]);
+
+    const totalRevenue = revenueAgg[0]?.totalRevenue || 0;
+
+    return {
+      trips: {
+        total: totalTrips,
+        completed: completedTrips,
+        cancelled: cancelledTrips,
+        ongoing: ongoingTrips,
+      },
+      drivers: totalDrivers,
+      customers: totalCustomers,
+      revenue: totalRevenue,
+    };
+  }
+
 }

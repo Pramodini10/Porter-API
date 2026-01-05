@@ -13,7 +13,6 @@ import { Booking, BookingDocument } from 'src/customers/booking/schemas/booking.
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { GoogleMapsService } from 'src/common/google-maps.service';
 import { LiveTrackingGateway } from 'src/gateways/live-tracking.gateway';
-import { Wallet, WalletDocument } from './schemas/driver-wallet.schema';
 import { Withdraw, WithdrawDocument } from './schemas/withdraw.schema';
 import { Pricing, PricingDocument } from 'src/customers/booking/schemas/pricing.schema';
 import { DigiLockerService } from './digilocker.service';
@@ -27,7 +26,6 @@ export class DriversService {
     private readonly liveGateway: LiveTrackingGateway,
     private readonly digiLockerService: DigiLockerService,
     @InjectModel(Driver.name) private driverModel: Model<DriverDocument>,
-    @InjectModel(Wallet.name) private walletModel: Model<WalletDocument>,
     @InjectModel(Withdraw.name) private WithdrawModel: Model<WithdrawDocument>,
     private readonly jwtService: JwtService,
     @Inject(forwardRef(() => AuthService))
@@ -390,11 +388,9 @@ export class DriversService {
     });
 
     // 6️⃣ Wallet credit
-    await this.walletModel.findOneAndUpdate(
-      { driverId },
-      { $inc: { balance: driverEarning } },
-      { upsert: true },
-    );
+    await this.driverModel.findByIdAndUpdate(driverId, {
+      $inc: { walletBalance: driverEarning },
+    });
 
     // 7️⃣ Stop live tracking
     this.liveGateway.stopTracking(bookingId);
@@ -414,7 +410,7 @@ export class DriversService {
 
   // ================= UPDATE DRIVER LOCATION =================
   async updateLocation(driverId: string, dto: UpdateLocationDto,) {
-     const { lat, lng } = dto;
+    const { lat, lng } = dto;
 
     // update driver live location
     await this.driverModel.findByIdAndUpdate(driverId, {
@@ -461,31 +457,32 @@ export class DriversService {
         await booking.save();
       }
     }
-      return { message: 'Location updated' };
+    return { message: 'Location updated' };
   }
+
   // 13. Driver Earnings
   async getDriverEarnings(driverId: string) {
-      // Get all trips or bookings for the driver
-      const trips = await this.bookingModel.find({
-        driverId,
-        status: BookingStatus.TRIP_COMPLETED
-      });
+    // Get all trips or bookings for the driver
+    const trips = await this.bookingModel.find({
+      driverId,
+      status: BookingStatus.TRIP_COMPLETED
+    });
 
-      // Calculate total earnings
-      const totalEarnings = trips.reduce((sum, trip) => sum + (trip.driverEarning || 0), 0);
+    // Calculate total earnings
+    const totalEarnings = trips.reduce((sum, trip) => sum + (trip.driverEarning || 0), 0);
 
-      // Optionally, get wallet balance if you have a wallet model
-      const wallet = await this.walletModel.findOne({ driverId });
+    // Optionally, get wallet balance if you have a wallet model
+    const driver = await this.driverModel.findById(driverId).lean();
 
-      // Month-wise earnings
-      const monthEarnings: { [key: string]: number } = {};
+    // Month-wise earnings
+    const monthEarnings: { [key: string]: number } = {};
 
-      trips.forEach(trip => {
-        if (!trip.fareFinalizedAt || trip.driverEarning == null) return;
+    trips.forEach(trip => {
+      if (!trip.fareFinalizedAt || trip.driverEarning == null) return;
 
-        const date = new Date(trip.fareFinalizedAt);
-        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-  // e.g., "2025-12"
+      const date = new Date(trip.fareFinalizedAt);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      // e.g., "2025-12"
 
       if (!monthEarnings[monthKey]) monthEarnings[monthKey] = 0;
       monthEarnings[monthKey] += trip.driverEarning;
@@ -508,7 +505,7 @@ export class DriversService {
       driverId,
       totalEarnings,
       tripsCount: trips.length,
-      walletBalance: wallet?.balance || 0,
+      balance: driver?.walletBalance || 0,
       monthEarnings,
       withdrawalHistory,
     };
@@ -516,81 +513,75 @@ export class DriversService {
 
   // 14. Driver Withdrawals 
   async getWalletSummary(driverId: string) {
-    const wallet = await this.walletModel.findOne({ driverId });
+    const driver = await this.driverModel.findById(driverId).lean();
     const completedTripsCount = await this.bookingModel.countDocuments({
       driverId,
       status: BookingStatus.TRIP_COMPLETED
     });
 
     return {
-      walletBalance: wallet?.balance || 0,
+      walletBalance: driver?.walletBalance || 0,
       completedTripsCount,
     };
   }
 
-  // Add / Update Bank Details
-  async addBankDetails(driverId: string, bankDetails: {
-    bankName: string,
-    accountHolderName: string,
-    bankAccountNumber: string,
-    ifscCode: string,
-  }) {
-    const wallet = await this.walletModel.findOneAndUpdate(
-      { driverId },
-      {
-        $set: {
-          bankName: bankDetails.bankName,
-          bankAccountNumber: bankDetails.bankAccountNumber,
-          ifscCode: bankDetails.ifscCode,
-        }
-      },
-      { upsert: true, new: true }
-    );
+  // Add Bank Details
+  async addBankDetails(
+    driverId: string,
+    bankDetails: {
+      bankName: string;
+      accountHolderName: string;
+      bankAccountNumber: string;
+      ifscCode: string;
+    },
+  ) {
+    const driver = await this.driverModel.findById(driverId);
+
+    if (!driver) {
+      throw new BadRequestException('Driver not found');
+    }
+
+    driver.bankDetails = {
+      bankName: bankDetails.bankName,
+      accountHolderName: bankDetails.accountHolderName,
+      bankAccountNumber: bankDetails.bankAccountNumber,
+      ifscCode: bankDetails.ifscCode,
+    };
+
+    await driver.save();
 
     return {
-      message: 'Bank details updated successfully',
-      bankDetails: {
-        bankName: wallet.bankName,
-        accountholderName: wallet.accountHolderName,
-        bankAccountNumber: wallet.bankAccountNumber,
-        ifscCode: wallet.ifscCode,
-      }
+      message: 'Bank details added successfully',
+      bankDetails: driver.bankDetails,
     };
   }
 
+
   // 15. Request Withdrawal
   async requestWithdrawal(driverId: string, amount: number) {
-    const wallet = await this.walletModel.findOne({ driverId });
+    const driver = await this.driverModel.findById(driverId);
 
-    if (!wallet?.bankAccountNumber) {
+    if (!driver?.bankDetails?.bankAccountNumber) {
       throw new BadRequestException('Add bank details before withdrawal');
     }
 
-    if (amount <= 0) throw new BadRequestException('Amount must be greater than zero');
-    if (wallet.balance < amount) throw new BadRequestException('Insufficient balance');
-
-    // Deduct temporarily
-    const updatedWallet = await this.walletModel.findOneAndUpdate(
-      { driverId, balance: { $gte: amount } },
-      { $inc: { balance: -amount } },
-      { new: true }
-    );
-
-    if (!updatedWallet) {
+    if ((driver.walletBalance || 0) < amount) {
       throw new BadRequestException('Insufficient balance');
     }
 
-    const withdraw = new this.WithdrawModel({
+    driver.walletBalance -= amount;
+    await driver.save();
+
+    const withdraw = await this.WithdrawModel.create({
       driverId,
       amount,
-      status: 'PENDING'
+      status: 'PENDING',
     });
-    await withdraw.save();
 
     return {
       message: 'Withdrawal requested successfully',
       requestId: withdraw._id,
-      walletBalance: wallet.balance,
+      walletBalance: driver.walletBalance,
     };
   }
 
@@ -626,7 +617,7 @@ export class DriversService {
     const todaysTrips = await this.bookingModel.find({
       driverId,
       status: BookingStatus.TRIP_COMPLETED,
-      fareFinalizedAt: { $gte: startOfDay, $lte: endOfDay },
+      tripEndTime: { $gte: startOfDay, $lte: endOfDay },
     });
 
     let todayEarnings = 0;
@@ -650,7 +641,7 @@ export class DriversService {
     // ─────────────────────────────────────────────
     // 3️. Wallet Balance
     // ─────────────────────────────────────────────
-    const wallet = await this.walletModel.findOne({ driverId });
+    const driver = await this.driverModel.findById(driverId).lean();
 
     // ─────────────────────────────────────────────
     // 4️. Ongoing Trip (if any)
@@ -681,7 +672,7 @@ export class DriversService {
       },
 
       wallet: {
-        balance: wallet?.balance || 0,
+        balance: driver?.walletBalance || 0,
       },
 
       ongoingTrip: ongoingTrip

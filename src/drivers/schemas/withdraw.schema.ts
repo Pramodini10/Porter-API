@@ -11,7 +11,7 @@ export class Withdraw {
     @Prop({ required: true })
     amount: number;
 
-    @Prop({ enum: ['PENDING', 'COMPLETED'], default: 'PENDING' })
+    @Prop({ enum: ['PENDING', 'APPROVED','REJECTED'], default: 'PENDING' })
     status: string;
 }
 

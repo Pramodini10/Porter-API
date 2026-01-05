@@ -1,5 +1,5 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { IsNumber } from "class-validator";
+import { IsMobilePhone, IsNumber, IsOptional, IsString } from "class-validator";
 
 export class BookingEstimateDto {
   @ApiProperty()
@@ -17,4 +17,14 @@ export class BookingEstimateDto {
   @ApiProperty()
   @IsNumber()
   dropLng: number;
+
+  @ApiProperty()
+  @IsOptional()
+  @IsString()
+  receiverName?: string;
+
+  @ApiProperty()
+  @IsOptional()
+  @IsMobilePhone('en-IN')
+  receiverMobile?: string;
 }

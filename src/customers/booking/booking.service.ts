@@ -44,7 +44,6 @@ export class BookingService {
     };
   }
 
-  // STEP 2 — ESTIMATE (NO DB)
   async getEstimate(dto: BookingEstimateDto) {
     const { distanceKm, durationMin } =
       await this.mapsService.getDistanceAndDuration(
@@ -61,36 +60,61 @@ export class BookingService {
 
     const vehicles = await this.vehicleModel.find({ isActive: true });
 
-    // Fetch pricing based ONLY on vehicleType
     const pricingList = await this.pricingModel.find({
       vehicleType: { $in: vehicles.map(v => v.vehicleType) },
       isActive: true,
     });
 
+    const isBookingForOther =
+      !!dto.receiverName && !!dto.receiverMobile;
+
     return {
       distanceKm,
       durationMin,
+      city,
+
+      bookingFor: isBookingForOther ? 'OTHER' : 'SELF',
+
+      receiver: isBookingForOther
+        ? {
+          name: dto.receiverName,
+          mobile: dto.receiverMobile,
+        }
+        : null,
+
       vehicles: vehicles.map(vehicle => {
         const pricing = pricingList.find(
           p => p.vehicleType === vehicle.vehicleType,
         );
 
-        let estimatedFare: number | null = null ;
+        let estimatedFare: number | null = null;
 
         if (pricing) {
-          estimatedFare =
-            pricing.baseFare +
-            distanceKm * pricing.perKmRate;
+          const baseFare = Number(pricing.baseFare);
+          const perKmRate = Number(pricing.perKmRate);
+          const distance = Number(distanceKm);
+
+          if (
+            Number.isFinite(baseFare) &&
+            Number.isFinite(perKmRate) &&
+            Number.isFinite(distance)
+          ) {
+            estimatedFare = Math.round(
+              baseFare + distance * perKmRate
+            );
+          }
         }
 
         return {
           vehicleType: vehicle.vehicleType,
-          estimatedFare, // 🔥 estimate only
+          estimatedFare,
           etaMin: durationMin,
         };
       }),
+
     };
   }
+
 
   // 3️⃣ CREATE BOOKING + DISPATCH
   async createBooking(customerId: string, dto: SelectVehicleDto) {
@@ -158,42 +182,60 @@ export class BookingService {
     return { bookingId: booking._id };
   }
 
-  // 4️⃣ GET BOOKING
-  async getBookingById(customerId: string, bookingId: string) {
+  // 4. COMMON HELPER
+  private async findCurrentBooking(customerId: string) {
     const booking = await this.bookingModel.findOne({
-      _id: bookingId,
       customerId,
-    });
+      status: {
+        $in: [
+          BookingStatus.SEARCHING_DRIVER,
+          BookingStatus.DRIVER_NOTIFIED,
+          BookingStatus.DRIVER_ASSIGNED,
+          BookingStatus.TRIP_STARTED,
+          BookingStatus.NO_DRIVER_FOUND,
+        ],
+      },
+    }).sort({ createdAt: -1 });
 
-    if (!booking) throw new BadRequestException('Booking not found');
+    if (!booking) {
+      throw new BadRequestException('No active booking found');
+    }
+
     return booking;
   }
 
-  // 5️⃣ STATUS
-  async getBookingStatus(customerId: string, bookingId: string) {
-    const booking = await this.getBookingById(customerId, bookingId);
+  // 5.GET CURRENT BOOKING
+  async getCurrentBooking(customerId: string) {
+    return this.findCurrentBooking(customerId);
+  }
+
+  // 6. GET CURRENT BOOKING STATUS
+  async getCurrentBookingStatus(customerId: string) {
+    const booking = await this.findCurrentBooking(customerId);
     return { status: booking.status };
   }
 
-  // 6️⃣ DRIVER LOCATION
-  async getDriverLocation(customerId: string, bookingId: string) {
-    const booking = await this.getBookingById(customerId, bookingId);
-    if (!booking.driverId)
-      throw new BadRequestException('Driver not assigned');
+  // 7. GET DRIVER LOCATION
+  async getCurrentDriverLocation(customerId: string) {
+    const booking = await this.findCurrentBooking(customerId);
+
+    if (!booking.driverId) {
+      throw new BadRequestException('Driver not assigned yet');
+    }
 
     return booking.lastDriverLocation;
   }
 
-  // 7️⃣ CANCEL
-  async cancelBooking(customerId: string, bookingId: string) {
-    const booking = await this.getBookingById(customerId, bookingId);
+  // 8.CANCEL CURRENT BOOKING
+  async cancelCurrentBooking(customerId: string) {
+    const booking = await this.findCurrentBooking(customerId);
 
     if (
       [BookingStatus.TRIP_STARTED, BookingStatus.TRIP_COMPLETED].includes(
         booking.status,
       )
     ) {
-      throw new BadRequestException('Cannot cancel now');
+      throw new BadRequestException('Cannot cancel at this stage');
     }
 
     booking.status = BookingStatus.CANCELLED;
@@ -206,6 +248,6 @@ export class BookingService {
       });
     }
 
-    return { message: 'Booking cancelled' };
+    return { message: 'Booking cancelled successfully' };
   }
 }
