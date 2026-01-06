@@ -569,9 +569,7 @@ export class DriversService {
       throw new BadRequestException('Insufficient balance');
     }
 
-    driver.walletBalance -= amount;
-    await driver.save();
-
+    // ❗ NO WALLET DEDUCTION HERE
     const withdraw = await this.WithdrawModel.create({
       driverId,
       amount,
@@ -579,9 +577,11 @@ export class DriversService {
     });
 
     return {
-      message: 'Withdrawal requested successfully',
+      message: 'Withdrawal request submitted',
       requestId: withdraw._id,
-      walletBalance: driver.walletBalance,
+      amount,
+      status: withdraw.status,
+      walletBalance: driver.walletBalance, // unchanged
     };
   }
 

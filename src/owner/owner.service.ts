@@ -8,6 +8,7 @@ import { Booking, BookingDocument } from 'src/customers/booking/schemas/booking.
 import { Driver, DriverDocument } from 'src/drivers/schemas/driver.schema';
 import { Withdraw, WithdrawDocument } from 'src/drivers/schemas/withdraw.schema';
 import { GoogleMapsService } from 'src/common/google-maps.service';
+import { Customer, CustomerDocument } from 'src/customers/schemas/customer.schema';
 
 @Injectable()
 export class OwnerService {
@@ -16,6 +17,7 @@ export class OwnerService {
     @InjectModel(Driver.name) private driverModel: Model<DriverDocument>,
     @InjectModel(Withdraw.name) private withdrawModel: Model<WithdrawDocument>,
     @InjectModel(Booking.name) private bookingModel: Model<BookingDocument>,
+    @InjectModel(Customer.name) private customerModel: Model<CustomerDocument>,
     private readonly mapsService: GoogleMapsService,) { }
 
   private async hashPassword(password: string): Promise<string> {
@@ -105,6 +107,7 @@ export class OwnerService {
         vehicleModel: driver.vehicleModel,
         vehicleNumber: driver.vehicleNumber,
         vehicleMake: driver.vehicleMake,
+        chassisNumber: driver.chassisNumber,
         status: driver.status
       },
     };
@@ -250,10 +253,23 @@ export class OwnerService {
       throw new BadRequestException('No pending withdrawal request');
     }
 
+    const driver = await this.driverModel.findById(withdraw.driverId);
+    if (!driver) throw new BadRequestException('Driver not found');
+
+    if ((driver.walletBalance || 0) < withdraw.amount) {
+      throw new BadRequestException('Insufficient balance at approval time');
+    }
+
+    // ✅ DEDUCT MONEY ONLY ON APPROVAL
+    driver.walletBalance -= withdraw.amount;
+    await driver.save();
+
     withdraw.status = 'APPROVED';
     await withdraw.save();
 
-    return { message: 'Withdrawal approved successfully' };
+    return {
+      message: 'Withdrawal approved successfully',
+    };
   }
 
   //7. REJECT WITHDRAWAL 
@@ -263,20 +279,45 @@ export class OwnerService {
       status: 'PENDING',
     });
 
-    if (!withdraw) throw new BadRequestException('No withdrawal request');
+    if (!withdraw) {
+      throw new BadRequestException('No pending withdrawal request');
+    }
 
+    // ❗ NO WALLET CHANGES
     withdraw.status = 'REJECTED';
-
-    await this.driverModel.findByIdAndUpdate(withdraw.driverId, {
-      $inc: { walletBalance: withdraw.amount }
-    });
-
     await withdraw.save();
 
-    return { message: 'Withdrawal rejected successfully' };
+    return {
+      message: 'Withdrawal rejected successfully',
+    };
   }
 
-  //8. Admin Dashboard
+  // 8. Owner: Get all withdrawal requests
+  async getAllWithdrawals() {
+    return this.withdrawModel
+      .find()
+      .populate('driverId', 'name mobile')
+      .sort({ createdAt: -1 });
+  }
+
+  //9. ================= CUSTOMER LIST (FIXED) ================= 
+  async getAllCustomers() {
+    const customers = await this.customerModel
+      .find()
+      .lean();
+
+    return {
+      status: true,
+      data: customers.map(customer => ({
+        id: customer._id,
+        name: `${customer.firstName || ''} ${customer.lastName || ''}`.trim(),
+        mobile: customer.mobile,
+        email: customer.email
+      })),
+    };
+  }
+
+  // 10. Admin Dashboard
   async getDashboardStats() {
     // bookings stats
     const [

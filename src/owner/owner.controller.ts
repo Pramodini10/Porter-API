@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CreateOwnerDto } from './dto/create-owner.dto';
 import { OwnerService } from './owner.service';
@@ -29,10 +29,10 @@ export class OwnerController {
     };
   }
 
-  // Drivers with withdrawal requests
+  // All Drivers 
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
-  @Get('drivers')
+  @Get('all-drivers')
   getDrivers() {
     return this.ownerService.getAllDrivers();
   }
@@ -61,20 +61,36 @@ export class OwnerController {
     return this.ownerService.getTripManagement();
   }
 
+  // All Withdrawal Request 
+  @ApiBearerAuth()
+  @UseGuards(OwnerJwtGuard)
+  @Get('/all-requests')
+  getAllWithdrawals() {
+    return this.ownerService.getAllWithdrawals();
+  }
+
   // Approve withdrawal
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
-  @Post('withdrawals/:withdrawalId/approve')
-  approveWithdrawal(@Param('withdrawalId') withdrawalId: string) {
+  @Patch(':id/approve')
+  approveWithdrawal(@Param('id') withdrawalId: string) {
     return this.ownerService.approveWithdrawal(withdrawalId);
   }
 
   // Reject withdrawal
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
-  @Post('withdrawals/:withdrawalId/reject')
-  rejectWithdrawal(@Param('withdrawalId') withdrawalId: string) {
+  @Patch(':id/reject')
+  rejectWithdrawal(@Param('id') withdrawalId: string) {
     return this.ownerService.rejectWithdrawal(withdrawalId);
+  }
+
+  // All Customers 
+  @ApiBearerAuth()
+  @UseGuards(OwnerJwtGuard)
+  @Get('all-customers')
+  getCustomers() {
+    return this.ownerService.getAllCustomers();
   }
 
   // Admin Dashboard
