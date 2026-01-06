@@ -96,11 +96,14 @@ export class MasterService {
         return this.pricingModel.create(dto);
     }
 
-    async getPricing(vehicleType: string) {
-        return this.pricingModel.find({
-            vehicleType,
-            isActive: true,
-        });
+    async getPricing(vehicleType?: string) {
+        const filter: any = { isActive: true };
+
+        if (vehicleType) {
+            filter.vehicleType = vehicleType;
+        }
+
+        return this.pricingModel.find(filter).sort({ vehicleType: 1 });
     }
 
     async updatePricing(id: string, dto: UpdatePricingDto) {

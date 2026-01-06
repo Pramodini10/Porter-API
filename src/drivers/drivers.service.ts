@@ -491,36 +491,36 @@ export class DriversService {
   }
 
   // ================= GEO-NEARBY DRIVER QUERY =================
-async findNearbyDrivers(params: {
-  pickupLat: number;
-  pickupLng: number;
-  vehicleType: string;
-  radiusKm?: number;
-}) {
-  const {
-    pickupLat,
-    pickupLng,
-    vehicleType,
-    radiusKm = 3, // default 3km
-  } = params;
+  async findNearbyDrivers(params: {
+    pickupLat: number;
+    pickupLng: number;
+    vehicleType: string;
+    radiusKm?: number;
+  }) {
+    const {
+      pickupLat,
+      pickupLng,
+      vehicleType,
+      radiusKm = 3, // default 3km
+    } = params;
 
-  return this.driverModel.find({
-    isOnline: true,
-    isAvailable: true,
-    vehicleType,
-    currentLocation: {
-      $near: {
-        $geometry: {
-          type: 'Point',
-          coordinates: [pickupLng, pickupLat],
+    return this.driverModel.find({
+      isOnline: true,
+      isAvailable: true,
+      vehicleType,
+      currentLocation: {
+        $near: {
+          $geometry: {
+            type: 'Point',
+            coordinates: [pickupLng, pickupLat],
+          },
+          $maxDistance: radiusKm * 1000, // meters
         },
-        $maxDistance: radiusKm * 1000, // meters
       },
-    },
-  })
-  .select('_id firstName lastName currentLocation') // keep payload light
-  .limit(10); // safety limit
-}
+    })
+      .select('_id firstName lastName currentLocation') // keep payload light
+      .limit(10); // safety limit
+  }
 
   // 13. Driver Earnings
   async getDriverEarnings(driverId: string) {
