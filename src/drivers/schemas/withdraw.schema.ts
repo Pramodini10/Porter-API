@@ -1,12 +1,16 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import { Date, Document } from "mongoose";
+import { Date, Document, Types } from "mongoose";
 
 export type WithdrawDocument = Withdraw & Document & { createdAt: Date; updatedAt: Date };
 
 @Schema({ timestamps: true })
 export class Withdraw {
-    @Prop({ required: true })
-    driverId: string;
+    @Prop({
+        type: Types.ObjectId,
+        ref: 'Driver',
+        required: true,
+    })
+    driverId: Types.ObjectId;
 
     @Prop({ required: true })
     amount: number;

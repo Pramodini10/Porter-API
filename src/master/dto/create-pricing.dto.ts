@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNumber, IsNotEmpty, Min } from 'class-validator';
+import { IsString, IsNumber, IsNotEmpty, Min, IsBoolean, IsOptional } from 'class-validator';
 
 export class CreatePricingDto {
   @ApiProperty()
@@ -21,4 +21,10 @@ export class CreatePricingDto {
   @IsNumber()
   @Min(0)
   commissionPercent: number;
+
+  @ApiProperty()
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }
+

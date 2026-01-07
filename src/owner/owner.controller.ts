@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CreateOwnerDto } from './dto/create-owner.dto';
 import { OwnerService } from './owner.service';
 import { OwnerJwtGuard } from 'src/master/owner-jwt.guard';
+import { UpdateProfileDto } from './dto/profile-update.dto';
 
 @ApiTags('Admin')
 @Controller('owner')
@@ -96,11 +97,26 @@ export class OwnerController {
   // Admin Dashboard
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
-  @Get('dashboard/stats')
-  async getDashboardStats() {
+  @Get('dashboard')
+  async getAdminDashboard() {
     return {
-      status: true,
-      data: await this.ownerService.getDashboardStats(),
+      message: 'Admin dashboard data fetched successfully',
+      data: await this.ownerService.getAdminDashboard(),
     };
   }
+
+  @ApiBearerAuth()
+  @UseGuards(OwnerJwtGuard)
+  @Get('profile')
+  getProfile(@Req() req) {
+    return this.ownerService.getProfile(req.owner.userId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(OwnerJwtGuard)
+  @Put('profile/update')
+  updateProfile(@Req() req, @Body() dto: UpdateProfileDto) {
+    return this.ownerService.updateProfile(req.owner.userId, dto);
+  }
+  
 }

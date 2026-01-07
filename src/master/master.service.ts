@@ -97,7 +97,7 @@ export class MasterService {
     }
 
     async getPricing(vehicleType?: string) {
-        const filter: any = { isActive: true };
+        const filter: any = {};
 
         if (vehicleType) {
             filter.vehicleType = vehicleType;
@@ -105,7 +105,7 @@ export class MasterService {
 
         return this.pricingModel.find(filter).sort({ vehicleType: 1 });
     }
-
+    
     async updatePricing(id: string, dto: UpdatePricingDto) {
         const pricing = await this.pricingModel.findByIdAndUpdate(id, dto, { new: true });
         if (!pricing) throw new NotFoundException('Pricing not found');

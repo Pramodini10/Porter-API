@@ -204,6 +204,19 @@ export class DriversService {
       isAvailable: dto.isOnline,
     });
 
+    if (dto.isOnline) {
+      await this.bookingModel.updateMany(
+        {
+          status: BookingStatus.NO_DRIVER_FOUND,
+          vehicleType: driver.vehicleType, // Car / Bike / Auto
+          rejectedDrivers: { $ne: driverId },
+        },
+        {
+          $set: { status: BookingStatus.DRIVER_NOTIFIED },
+        },
+      );
+    }
+
     return {
       message: dto.isOnline ? 'Driver ONLINE' : 'Driver OFFLINE',
     };
@@ -212,7 +225,8 @@ export class DriversService {
   // 7. Pending Requests
   async getPendingRequests(driverId: string) {
     return this.bookingModel.find({
-      status: BookingStatus.DRIVER_NOTIFIED,
+      status: {$in:
+        [BookingStatus.NO_DRIVER_FOUND,BookingStatus.DRIVER_NOTIFIED,]},
       rejectedDrivers: { $ne: driverId },
     });
   }

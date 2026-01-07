@@ -9,6 +9,7 @@ import { Driver, DriverDocument } from 'src/drivers/schemas/driver.schema';
 import { Withdraw, WithdrawDocument } from 'src/drivers/schemas/withdraw.schema';
 import { GoogleMapsService } from 'src/common/google-maps.service';
 import { Customer, CustomerDocument } from 'src/customers/schemas/customer.schema';
+import { UpdateProfileDto } from './dto/profile-update.dto';
 
 @Injectable()
 export class OwnerService {
@@ -296,10 +297,10 @@ export class OwnerService {
   async getAllWithdrawals() {
     return this.withdrawModel
       .find()
-      .populate('driverId', 'name mobile')
+      .populate('driverId', 'firstName lastName mobile')
       .sort({ createdAt: -1 });
   }
-
+ 
   //9. ================= CUSTOMER LIST (FIXED) ================= 
   async getAllCustomers() {
     const customers = await this.customerModel
@@ -319,60 +320,187 @@ export class OwnerService {
 
   // 10. Admin Dashboard
   async getDashboardStats() {
-    // bookings stats
     const [
       totalTrips,
-      completedTrips,
+      totalDrivers,
+      totalCustomers,
       cancelledTrips,
+      completedTrips,
       ongoingTrips,
-      revenueAgg,
+      revenue,
     ] = await Promise.all([
-      this.bookingModel.countDocuments(),
-
+      this.bookingModel.countDocuments(), //totalTrips
+      this.driverModel.countDocuments(),  //totalDrivers
+      this.customerModel.countDocuments(), //totalCustomers
+      this.bookingModel.countDocuments({ status: 'CANCELLED' }), //cancelled Trips
+      this.bookingModel.countDocuments({status: 'TRIP_COMPLETED',}), //completed Trips
       this.bookingModel.countDocuments({
-        status: 'TRIP_COMPLETED',
-      }),
-
-      this.bookingModel.countDocuments({
-        status: 'CANCELLED',
-      }),
-
-      this.bookingModel.countDocuments({
-        status: { $in: ['TRIP_STARTED', 'ONGOING'] },
-      }),
-
+        status: { $in: ['DRIVER_NOTIFIED','DRIVER_ASSIGNED', 'TRIP_STARTED'] },
+      }), //Ongoing Trips
       this.bookingModel.aggregate([
         {
-          $match: { status: 'TRIP_COMPLETED' },
+          $match: {
+            status: { $in: ['TRIP_COMPLETED', 'COMPLETED'] },
+          },
         },
         {
           $group: {
             _id: null,
-            totalRevenue: { $sum: '$finalFare' },
+            total: { $sum: '$finalFare' },
           },
         },
       ]),
     ]);
 
-    // drivers & customers
-    const [totalDrivers, totalCustomers] = await Promise.all([
-      this.driverModel.countDocuments(),
-      this.ownerModel.db.collection('customers').countDocuments(),
-    ]);
-
-    const totalRevenue = revenueAgg[0]?.totalRevenue || 0;
-
     return {
-      trips: {
-        total: totalTrips,
-        completed: completedTrips,
-        cancelled: cancelledTrips,
-        ongoing: ongoingTrips,
-      },
-      drivers: totalDrivers,
-      customers: totalCustomers,
-      revenue: totalRevenue,
+      totalTrips,
+      totalDrivers,
+      totalCustomers,
+      cancelledTrips,
+      completedTrips,
+      ongoingTrips,
+      totalRevenue: revenue[0]?.total || 0,
     };
   }
 
+  async getOngoingTrips() {
+    return this.bookingModel
+      .find({
+        status: { $in: ['DRIVER_ASSIGNED', 'TRIP_STARTED'] },
+      })
+      .populate('driverId', 'firstName lastName mobile')
+      .populate('customerId', 'name mobile')
+      .select(
+        'pickupLocation dropLocation estimatedFare status createdAt'
+      )
+      .sort({ createdAt: -1 });
+  }
+
+  // Month-wose Trip Amount (BAR CHART)
+  async getMonthWiseRevenue() {
+    const startOfYear = new Date(new Date().getFullYear(), 0, 1);
+
+    return this.bookingModel.aggregate([
+      {
+        $match: {
+          status: { $in: ['TRIP_COMPLETED', 'COMPLETED'] },
+          createdAt: { $gte: startOfYear },
+        },
+      },
+      {
+        $group: {
+          _id: { $month: '$createdAt' }, // 1 = Jan
+          amount: { $sum: '$finalFare' },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+  }
+
+  //Weekly Trips (LINE CHART)
+  async getWeeklyTrips() {
+    const startOfWeek = new Date();
+    startOfWeek.setDate(startOfWeek.getDate() - 6);
+
+    return this.bookingModel.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startOfWeek },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
+          },
+          trips: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+  }
+
+  //Monthly Vehicle Registrations (LINE CHART)
+  async getMonthlyVehicleRegistrations() {
+    const startOfYear = new Date(new Date().getFullYear(), 0, 1);
+
+    return this.driverModel.aggregate([
+      {
+        $match: { createdAt: { $gte: startOfYear } },
+      },
+      {
+        $group: {
+          _id: { $month: '$createdAt' },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+  }
+
+  // ONE Method for ADMIN Dashboard
+  async getAdminDashboard() {
+    const [
+      stats,
+      monthWiseRevenue,
+      weeklyTrips,
+      monthlyVehicleRegistrations,
+      ongoingTrips,
+      withdrawals,
+    ] = await Promise.all([
+      this.getDashboardStats(),            // TOP CARDS
+      this.getMonthWiseRevenue(),          // BAR CHART
+      this.getWeeklyTrips(),               // LINE CHART
+      this.getMonthlyVehicleRegistrations(), // LINE CHART
+      this.getOngoingTrips(),              // TABLE
+      this.getAllWithdrawals(),            // TABLE
+    ]);
+
+    return {
+      stats,
+      charts: {
+        monthWiseRevenue,
+        weeklyTrips,
+        monthlyVehicleRegistrations,
+      },
+      ongoingTrips,
+      withdrawals,
+    };
+  }
+
+  // Owner Profile
+  async getProfile(ownerId: string) {
+      const owner = await this.ownerModel.findById(ownerId).select(
+        'firstName lastName mobile email'
+      );
+  
+      if (!owner) {
+        throw new BadRequestException('Owner not found');
+      }
+  
+      return {
+        firstName: owner.firstName,
+        lastName: owner.lastName,
+        mobile: owner.mobile,
+        email: owner.email,
+      };
+    }
+
+    //Update Owner Profile 
+      async updateProfile(ownerId: string, dto: UpdateProfileDto) {
+        const owner = await this.ownerModel.findByIdAndUpdate(
+          ownerId,
+          { $set: dto },
+          { new: true }
+        ).select('firstName lastName mobile email');
+    
+        if (!owner) {
+          throw new BadRequestException('Owner not found');
+        }
+    
+        return {
+          message: 'Profile updated successfully',
+          profile: owner,
+        };
+      }
 }
