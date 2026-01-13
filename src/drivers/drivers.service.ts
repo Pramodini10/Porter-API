@@ -50,9 +50,9 @@ export class DriversService {
 
     const saved = await created.save();
 
-    await this.authService.createTempData(dto.mobile, 'driver', {
+    await this.authService.createTempData(mobile, 'driver', {
       driverId: saved._id,
-      ...dto
+      mobile,
     });
 
     // Issue next-step token for vehicle step
@@ -111,7 +111,7 @@ export class DriversService {
 
     await this.authService.createTempData(driver.mobile, 'driver', {
       driverId,
-      ...driver.toObject(),
+      mobile: driver.mobile,
       documents: docs,
     });
 
@@ -166,7 +166,7 @@ export class DriversService {
     // 🔥 SAME OTP LOGIC AS MANUAL UPLOAD
     await this.authService.createTempData(driver.mobile, 'driver', {
       driverId,
-      ...driver.toObject(),
+      mobile: driver.mobile,
       documents,
     });
 

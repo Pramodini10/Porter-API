@@ -153,7 +153,49 @@ export class OwnerService {
     };
   }
 
-  // 4. Customer Booking deatils
+  // 4. Driver Document Approve 
+  async approveDriverDocuments(driverId: string) {
+    const driver = await this.driverModel.findById(driverId);
+
+    if (!driver) {
+      throw new NotFoundException('Driver not found');
+    }
+
+    if (!driver.documents) {
+      throw new BadRequestException('No documents uploaded');
+    }
+
+    driver.documents.verified = true;
+
+    await driver.save();
+
+    return {
+      message: 'Driver documents approved successfully',
+    };
+  }
+
+  // 5. Driver Document Reject 
+  async rejectDriverDocuments(driverId: string, reason?: string) {
+    const driver = await this.driverModel.findById(driverId);
+
+    if (!driver) {
+      throw new NotFoundException('Driver not found');
+    }
+
+    if (!driver.documents) {
+      throw new BadRequestException('No documents uploaded');
+    }
+
+    driver.documents.verified = false;
+
+    await driver.save();
+
+    return {
+      message: 'Driver documents rejected',
+    };
+  }
+
+  // 6. Customer Booking deatils
   async getAllBookings() {
     const bookings = await this.bookingModel
       .find()
@@ -221,7 +263,7 @@ export class OwnerService {
     );
   }
 
-  // 5. TRIP MANAGEMENT (Driver-wise summary)
+  // 7. TRIP MANAGEMENT (Driver-wise summary)
   async getTripManagement() {
     // 1. Get all drivers
     const drivers = await this.driverModel
@@ -282,7 +324,7 @@ export class OwnerService {
     };
   }
 
-  // 6. APPROVE WITHDRAWAL
+  // 8. APPROVE WITHDRAWAL
   async approveWithdrawal(withdrawalId: string) {
     const withdraw = await this.withdrawModel.findOne({
       _id: withdrawalId,
@@ -312,7 +354,7 @@ export class OwnerService {
     };
   }
 
-  //7. REJECT WITHDRAWAL 
+  // 9. REJECT WITHDRAWAL 
   async rejectWithdrawal(withdrawalId: string) {
     const withdraw = await this.withdrawModel.findOne({
       _id: withdrawalId,
@@ -332,7 +374,7 @@ export class OwnerService {
     };
   }
 
-  // 8. Owner: Get all withdrawal requests
+  // 10. Owner: Get all withdrawal requests
   async getAllWithdrawals() {
     return this.withdrawModel
       .find()
@@ -340,7 +382,7 @@ export class OwnerService {
       .sort({ createdAt: -1 });
   }
 
-  //9. CUSTOMER LIST (FIXED) 
+  //11. CUSTOMER LIST (FIXED) 
   async getAllCustomers() {
     const customers = await this.customerModel
       .find()
@@ -357,7 +399,7 @@ export class OwnerService {
     };
   }
 
-  // 10. Admin Dashboard
+  // 12. Admin Dashboard
   async getDashboardStats() {
     const [
       totalTrips,
@@ -608,7 +650,7 @@ export class OwnerService {
     };
   }
 
-  //Update Owner Profile 
+  // Update Owner Profile 
   async updateProfile(ownerId: string, dto: UpdateProfileDto) {
     const owner = await this.ownerModel.findByIdAndUpdate(
       ownerId,
@@ -626,7 +668,7 @@ export class OwnerService {
     };
   }
 
-  // 11. Driver Payment (MONTH-WISE)
+  // 13. Driver Payment (MONTH-WISE)
   async getDriverPaymentSummary(month?: number, year?: number) {
     // Default → current month & year
     const now = new Date();

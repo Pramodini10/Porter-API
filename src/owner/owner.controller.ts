@@ -46,6 +46,25 @@ export class OwnerController {
     return this.ownerService.getDriverDetails(driverId);
   }
 
+  // Document Approve   
+  @ApiBearerAuth()
+  @UseGuards(OwnerJwtGuard)
+  @Patch('drivers/:driverId/documents/approve')
+  approveDriverDocuments(@Param('driverId') driverId: string) {
+    return this.ownerService.approveDriverDocuments(driverId);
+  }
+
+  // Document Reject
+  @ApiBearerAuth()
+  @UseGuards(OwnerJwtGuard)
+  @Patch('drivers/:driverId/documents/reject')
+  rejectDriverDocuments(
+    @Param('driverId') driverId: string,
+    @Body('reason') reason?: string,
+  ) {
+    return this.ownerService.rejectDriverDocuments(driverId, reason);
+  }
+
   // Customer Booking
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
