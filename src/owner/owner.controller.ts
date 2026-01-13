@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards, Put } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CreateOwnerDto } from './dto/create-owner.dto';
 import { OwnerService } from './owner.service';
@@ -122,7 +122,13 @@ export class OwnerController {
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
   @Get('payments/drivers')
-  getDriverPayments() {
-    return this.ownerService.getDriverPaymentSummary();
+  getDriverPayments(
+    @Query('month') month?: number,
+    @Query('year') year?: number,
+  ) {
+    return this.ownerService.getDriverPaymentSummary(
+      month ? Number(month) : undefined,
+      year ? Number(year) : undefined,
+    );
   }
 }

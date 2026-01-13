@@ -588,22 +588,24 @@ export class OwnerService {
     };
   }
 
-  // Driver Payment 
-  async getDriverPaymentSummary() {
-    // 📅 Today range
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+  // 11. Driver Payment (MONTH-WISE)
+  async getDriverPaymentSummary(month?: number, year?: number) {
+    // Default → current month & year
+    const now = new Date();
+    const selectedMonth = month ?? now.getMonth() + 1; // 1-12
+    const selectedYear = year ?? now.getFullYear();
 
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
+    // 📅 Month range
+    const startOfMonth = new Date(selectedYear, selectedMonth - 1, 1, 0, 0, 0);
+    const endOfMonth = new Date(selectedYear, selectedMonth, 0, 23, 59, 59, 999);
 
     const data = await this.driverModel.aggregate([
-      // 1️⃣ Base drivers
+      // 1️⃣ Active drivers
       {
         $match: { isDeleted: { $ne: true } },
       },
 
-      // 2️⃣ All completed trips
+      // 2️⃣ Month-wise completed trips
       {
         $lookup: {
           from: 'bookings',
@@ -613,41 +615,25 @@ export class OwnerService {
               $match: {
                 $expr: {
                   $and: [
-                    { $eq: ['$driverId', '$$driverId'] },
+                    {
+                      $eq: [
+                        { $toObjectId: '$driverId' }, // 🔥 FIX
+                        '$$driverId'
+                      ],
+                    },
                     { $eq: ['$status', BookingStatus.TRIP_COMPLETED] },
+                    { $gte: ['$tripEndTime', startOfMonth] },
+                    { $lte: ['$tripEndTime', endOfMonth] },
                   ],
                 },
               },
             },
           ],
-          as: 'completedTrips',
+          as: 'monthlyTrips',
         },
       },
-
-      // 3️⃣ Today’s completed trips
-      {
-        $lookup: {
-          from: 'bookings',
-          let: { driverId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$driverId', '$$driverId'] },
-                    { $eq: ['$status', BookingStatus.TRIP_COMPLETED] },
-                    { $gte: ['$tripEndTime', startOfDay] },
-                    { $lte: ['$tripEndTime', endOfDay] },
-                  ],
-                },
-              },
-            },
-          ],
-          as: 'todayTrips',
-        },
-      },
-
-      // 4️⃣ Approved withdrawals
+      
+      // 3️⃣ Month-wise approved withdrawals
       {
         $lookup: {
           from: 'withdraws',
@@ -659,42 +645,50 @@ export class OwnerService {
                   $and: [
                     { $eq: ['$driverId', '$$driverId'] },
                     { $eq: ['$status', 'APPROVED'] },
+                    { $gte: ['$createdAt', startOfMonth] },
+                    { $lte: ['$createdAt', endOfMonth] },
                   ],
                 },
               },
             },
           ],
-          as: 'withdrawals',
+          as: 'monthlyWithdrawals',
         },
       },
 
-      // 5️⃣ Final computed fields
+      // 4️⃣ Final response structure
       {
         $project: {
           driverName: {
-            $concat: ['$firstName', ' ', '$lastName'],
+            $trim: {
+              input: { $concat: ['$firstName', ' ', '$lastName'] },
+            },
           },
-          mobile: '$mobile',
+          mobile: 1,
 
-          totalTrips: { $size: '$completedTrips' },
+          totalTrips: { $size: '$monthlyTrips' },
 
-          daywiseEarnings: {
-            $sum: '$todayTrips.driverEarning',
+          monthWiseEarnings: {
+            $sum: '$monthlyTrips.driverEarning',
           },
 
           withdrawalAmount: {
-            $sum: '$withdrawals.amount',
+            $sum: '$monthlyWithdrawals.amount',
           },
         },
       },
 
-      // 6️⃣ Sort by today earnings (optional)
+      // 5️⃣ Optional: sort by earnings (top drivers first)
       {
-        $sort: { daywiseEarnings: -1 },
+        $sort: { monthWiseEarnings: -1 },
       },
     ]);
 
-    return data;
+    return {
+      month: selectedMonth,
+      year: selectedYear,
+      data,
+    };
   }
 
 }

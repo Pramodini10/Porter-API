@@ -1,6 +1,6 @@
 import { BadRequestException, forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Driver, DriverDocument } from './schemas/driver.schema';
 import { DriverPersonalDto } from './dto/driver-personal.dto';
 import { DriverVehicleDto } from './dto/driver-vehicle.dto';
@@ -229,7 +229,7 @@ export class DriversService {
         },
       );
     }
-    
+
     return {
       message: dto.isOnline ? 'Driver ONLINE' : 'Driver OFFLINE',
     };
@@ -265,6 +265,7 @@ export class DriversService {
 
   // ACCEPT BOOKING 
   async acceptBooking(driverId: string, bookingId: string) {
+
     // 1️⃣ DRIVER CHECK
     const driver = await this.driverModel.findOne({
       _id: driverId,
@@ -276,16 +277,16 @@ export class DriversService {
       throw new BadRequestException('Driver not available');
     }
 
-    // 2️⃣ ATOMIC LOCK — only ONE driver can win
+    // 2️⃣ ATOMIC LOCK
     const booking = await this.bookingModel.findOneAndUpdate(
       {
         _id: bookingId,
         status: BookingStatus.DRIVER_NOTIFIED,
-        rejectedDrivers: { $ne: driverId },
+        rejectedDrivers: { $ne: new Types.ObjectId(driverId) },
       },
       {
         $set: {
-          driverId,
+          driverId: new Types.ObjectId(driverId),
           status: BookingStatus.DRIVER_ASSIGNED,
         },
       },
@@ -293,19 +294,30 @@ export class DriversService {
     );
 
     if (!booking) {
-      throw new BadRequestException('Booking already taken or unavailable');
+      throw new BadRequestException('Booking already taken');
     }
 
-    // 3️⃣ DRIVER → PICKUP DISTANCE
-    const { distanceKm, durationMin } =
-      await this.mapsService.getDistanceAndDuration(
-        driver.currentLocation.coordinates[1], // lat
-        driver.currentLocation.coordinates[0], // lng
-        booking.pickupLocation.lat,
-        booking.pickupLocation.lng,
-      );
+    // 3️⃣ DRIVER → PICKUP (SAFE BLOCK)
+    let distanceKm = 0;
+    let durationMin = 0;
+    let pickupCharge = 0;
 
-    const pickupCharge = this.calculatePickupCharge(distanceKm);
+    try {
+      if (driver.currentLocation?.coordinates?.length === 2) {
+        const result = await this.mapsService.getDistanceAndDuration(
+          driver.currentLocation.coordinates[1],
+          driver.currentLocation.coordinates[0],
+          booking.pickupLocation.lat,
+          booking.pickupLocation.lng,
+        );
+
+        distanceKm = result.distanceKm;
+        durationMin = result.durationMin;
+        pickupCharge = this.calculatePickupCharge(distanceKm);
+      }
+    } catch (e) {
+      console.log('⚠️ Maps failed, skipping distance calc:', e.message);
+    }
 
     booking.driverToPickupDistanceKm = distanceKm;
     booking.driverToPickupEtaMin = durationMin;
@@ -318,7 +330,7 @@ export class DriversService {
       isOnTrip: true,
     });
 
-    // 5️⃣ NOTIFY CUSTOMER
+    // 5️⃣ NOTIFY CUSTOMER (safe)
     this.liveGateway.server
       .to(`customer:${booking.customerId}`)
       .emit('booking:accepted', {
@@ -327,30 +339,28 @@ export class DriversService {
         etaMin: durationMin,
       });
 
-    // 6️⃣ START LIVE TRACKING
+    // 6️⃣ START TRACKING
     this.liveGateway.startTracking(bookingId);
 
     return {
       message: 'Booking accepted successfully',
-      bookingId,
-      driverToPickupDistanceKm: distanceKm,
-      pickupCharge,
+      bookingId: booking._id,
     };
   }
 
   // REJECT BOOKING
   async rejectBooking(driverId: string, bookingId: string) {
-  await this.bookingModel.updateOne(
-    {
-      _id: bookingId,
-    },
-    {
-      $addToSet: { rejectedDrivers: driverId },
-    },
-  );
+    await this.bookingModel.updateOne(
+      {
+        _id: bookingId,
+      },
+      {
+        $addToSet: { rejectedDrivers: driverId },
+      },
+    );
 
-  return { message: 'Booking rejected' };
-}
+    return { message: 'Booking rejected' };
+  }
 
   // START TRIP
   async startTrip(driverId: string, bookingId: string) {
@@ -578,6 +588,20 @@ export class DriversService {
 
     // Calculate total earnings
     const totalEarnings = trips.reduce((sum, trip) => sum + (trip.driverEarning || 0), 0);
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const todayTrips = trips.filter(
+      trip => trip.tripEndTime && new Date(trip.tripEndTime) >= todayStart
+    );
+
+    let todayEarnings = 0;
+    let todayDurationMin = 0;
+
+    todayTrips.forEach(trip => {
+      todayEarnings += trip.driverEarning || 0;
+      todayDurationMin += trip.actualDurationMin || 0;
+    });
 
     // Optionally, get wallet balance if you have a wallet model
     const driver = await this.driverModel.findById(driverId).lean();
@@ -615,6 +639,19 @@ export class DriversService {
       tripsCount: trips.length,
       balance: driver?.walletBalance || 0,
       monthEarnings,
+      trips: trips.map(trip => ({
+        id: trip._id,
+        earning: trip.driverEarning,
+        date: trip.fareFinalizedAt,
+        distanceKm: trip.actualDistanceKm,
+        pickup: trip.pickupLocation,
+        drop: trip.dropLocation,
+      })),
+      today: {
+        earnings: todayEarnings,
+        trips: todayTrips.length,
+        durationMin: todayDurationMin,
+      },
       withdrawalHistory,
     };
   }
