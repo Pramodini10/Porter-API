@@ -107,7 +107,8 @@ export class OwnerService {
       throw new NotFoundException('Driver not found');
     }
 
-    const BASE_URL = process.env.FILE_BASE_URL || 'http://localhost:3000/uploads';
+    const baseUrl = 'http://localhost:3000/uploads';
+    const driverFolder = `driver-documents/${driver._id}`;
 
     return {
       driver: {
@@ -133,19 +134,19 @@ export class OwnerService {
             verified: driver.documents.verified || false,
 
             aadhaar: driver.documents.aadhaar
-              ? `${BASE_URL}/${driver.documents.aadhaar}`
+              ? `${baseUrl}/${driverFolder}/${driver.documents.aadhaar}`
               : null,
 
             panCard: driver.documents.panCard
-              ? `${BASE_URL}/${driver.documents.panCard}`
+              ? `${baseUrl}/${driverFolder}/${driver.documents.panCard}`
               : null,
 
             licenseFront: driver.documents.licenseFront
-              ? `${BASE_URL}/${driver.documents.licenseFront}`
+              ? `${baseUrl}/${driverFolder}/${driver.documents.licenseFront}`
               : null,
 
             licenseBack: driver.documents.licenseBack
-              ? `${BASE_URL}/${driver.documents.licenseBack}`
+              ? `${baseUrl}/${driverFolder}/${driver.documents.licenseBack}`
               : null,
           }
           : null,
