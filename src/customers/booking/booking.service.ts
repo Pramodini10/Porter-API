@@ -14,6 +14,7 @@ import { Pricing, PricingDocument } from './schemas/pricing.schema';
 import { City, CityDocument } from 'src/master/schemas/city.schema';
 import { Vehicle } from 'src/master/schemas/vehicle.schema';
 import { DriversService } from 'src/drivers/drivers.service';
+import { Customer } from '../schemas/customer.schema';
 
 @Injectable()
 export class BookingService {
@@ -27,7 +28,8 @@ export class BookingService {
     @InjectModel(Driver.name) private driverModel: Model<DriverDocument>,
     @InjectModel(Pricing.name) private pricingModel: Model<PricingDocument>,
     @InjectModel(City.name) private CityModel: Model<CityDocument>,
-    @InjectModel('Vehicle') private readonly vehicleModel: Model<Vehicle>
+    @InjectModel('Vehicle') private readonly vehicleModel: Model<Vehicle>,
+    @InjectModel('Customer') private readonly customerModel: Model<Customer>,
   ) { }
 
   // STEP 1: route check (NO DB)
@@ -134,9 +136,23 @@ export class BookingService {
       dto.pickupLng,
     );
 
+    const customer = await this.customerModel
+      .findById(customerId)
+      .select('firstName lastName mobile')
+      .lean();
+
+    if (!customer) {
+      throw new BadRequestException('Customer not found');
+    }
+
+    const customerName = `${customer.firstName ?? ''} ${customer.lastName ?? ''}`.trim();
+    const customerMobile = customer.mobile;
+
     const booking = await this.bookingModel.create({
       customerId,
       city,
+      customerName,
+      customerMobile,
       pickupLocation: { lat: dto.pickupLat, lng: dto.pickupLng },
       dropLocation: { lat: dto.dropLat, lng: dto.dropLng },
       vehicleType: dto.vehicleType,

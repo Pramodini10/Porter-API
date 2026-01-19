@@ -141,9 +141,15 @@ export class Booking extends Document {
     timestamp: Date;
   }[];
   
-  
   @Prop({ type: Date })
   arrivedAtPickupAt: Date;
+
+  @Prop()
+  customerName: string;
+
+  @Prop()
+  customerMobile: string;
+
 }
 
 export const BookingSchema = SchemaFactory.createForClass(Booking);
